@@ -74,40 +74,84 @@ class HelloWorld(Resource):
         else:
             return {'error': 'No text provided'}, 400
 
+# @app.route('/upload', methods=['POST'])
+# def image_upload():
+#     if 'file' not in request.files:
+#         return jsonify({'error': 'No file part'}), 400
+       
+#     # print("files ----->" , request.files['file'].filesname)
+#     file = request.files['file']
+#     if file.filename == '':
+#         return jsonify({'error': 'No selected file'}), 400
+    
+#     # Open and convert the image to RGB
+#     image = Image.open(io.BytesIO(file.read()))
+#     image = image.convert('RGB')  # Convert to RGB mode
+#     image_np = np.array(image)
+    
+#     # Find faces in the uploaded image
+#     face_locations = face_recognition.face_locations(image_np)
+#     face_encodings = face_recognition.face_encodings(image_np, face_locations)
+#     print("image ----->" , face_encodings)
+#     tolerance = 0.5
+#     for face_encoding in face_encodings:
+#         matches = face_recognition.compare_faces(known_face_encodings, face_encoding , tolerance=tolerance)
+#         face_distances = face_recognition.face_distance(known_face_encodings, face_encoding)
+#         name = "Unknown"
+#         print(matches)
+#         if True in matches:
+#             first_match_index = matches.index(True)
+#             name = known_face_names[first_match_index]
+        
+#             save_attendance(name)
+#             message = f"Attendance recorded for {name}"
+#         else:
+#             message = "No known face matched, attendance not recorded"
+#             return jsonify({'status': message}), 200
+#   else:
+#         message = "No faces found in the image"
+
+#     # Ensure a response is always returned
+#     return jsonify({'status': message}), 200       
+
 @app.route('/upload', methods=['POST'])
 def image_upload():
     if 'file' not in request.files:
         return jsonify({'error': 'No file part'}), 400
-       
-    # print("files ----->" , request.files['file'].filesname)
+
     file = request.files['file']
     if file.filename == '':
         return jsonify({'error': 'No selected file'}), 400
-    
+
     # Open and convert the image to RGB
     image = Image.open(io.BytesIO(file.read()))
     image = image.convert('RGB')  # Convert to RGB mode
     image_np = np.array(image)
-    
+
     # Find faces in the uploaded image
     face_locations = face_recognition.face_locations(image_np)
     face_encodings = face_recognition.face_encodings(image_np, face_locations)
-    print("image ----->" , face_encodings)
-    tolerance = 0.5
-    for face_encoding in face_encodings:
-        matches = face_recognition.compare_faces(known_face_encodings, face_encoding , tolerance=tolerance)
-        face_distances = face_recognition.face_distance(known_face_encodings, face_encoding)
-        name = "Unknown"
-        print(matches)
-        if True in matches:
-            first_match_index = matches.index(True)
-            name = known_face_names[first_match_index]
-        
-            save_attendance(name)
-            message = f"Attendance recorded for {name}"
-        else:
-            message = "No known face matched, attendance not recorded"
     
+    tolerance = 0.5
+    message = "No faces found in the image"  # Default message if no faces are detected
+
+    if face_encodings:
+        for face_encoding in face_encodings:
+            matches = face_recognition.compare_faces(known_face_encodings, face_encoding, tolerance=tolerance)
+            face_distances = face_recognition.face_distance(known_face_encodings, face_encoding)
+            name = "Unknown"
+            if True in matches:
+                first_match_index = matches.index(True)
+                name = known_face_names[first_match_index]
+                save_attendance(name)
+                message = f"Attendance recorded for {name}"
+                break  # Exit loop after first match (optional based on your needs)
+            else:
+                message = "No known face matched, attendance not recorded"
+    else:
+        message = "No faces found in the image"
+
+    # Ensure a response is always returned
     return jsonify({'status': message}), 200
 
 @app.route('/upload-image', methods=['POST'])
