@@ -1,5 +1,8 @@
 {
   "rewrites": [
-    { "source": "/(.*)", "destination": "main" }
+    { "source": "/(.*)", "destination": "/" }
+  ],
+  "builds": [
+    { "src": "app.py", "use": "@vercel/python" }
   ]
 }
