@@ -3,9 +3,7 @@ attrs==24.2.0
 blinker==1.8.2
 click==8.1.7
 colorama==0.4.6
-dlib @ file:///C:/Users/User/Downloads/dlib-python%20whl%20packages/dlib-19.24.99-cp312-cp312-win_amd64.whl#sha256=20c62e606ca4c9961305f7be3d03990380d3e6c17f8d27798996e97a73271862
 face-recognition==1.3.0
-face_recognition_models @ file:///E:/face-attendance/my_attendance
 Flask==3.0.3
 flask-restx==1.3.0
 importlib_resources==6.4.5
@@ -22,3 +20,4 @@ referencing==0.35.1
 rpds-py==0.20.0
 setuptools==74.1.2
 Werkzeug==3.0.4
+Flask-Cors==5.0.0
