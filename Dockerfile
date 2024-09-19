@@ -20,6 +20,5 @@ COPY uploaded_images /uploaded_images
 RUN chmod -R 755 /uploaded_images
 
 CMD ["flask", "run", "--host=0.0.0.0"]
-
 EXPOSE 5000
 
