@@ -6,6 +6,11 @@ from PIL import Image
 import io
 import numpy as np
 from flask_cors import CORS
+import boto3
+import time
+from dotenv import load_dotenv
+load_dotenv()
+
 app = Flask(__name__)
 CORS(app) 
 api = Api(app, doc='/docs')
@@ -18,30 +23,56 @@ IMAGE_DIR = 'uploaded_images'
 os.makedirs(IMAGE_DIR, exist_ok=True)  
 known_face_encodings = []
 known_face_names = []
+
+MINIO_URL=os.getenv('MINIO_URL', '')
+MINIO_ACCESS_KEY=os.getenv('MINIO_ACCESS_KEY', '')
+MINIO_SECRET_ACCESS_KEY=os.getenv('MINIO_SECRET_ACCESS_KEY', '')
+MINIO_REGION=os.getenv('MINIO_REGION', '')
+MINIO_BUCKET=os.getenv('MINIO_BUCKET', '')
+
+minio_client = boto3.client(
+    's3',
+    endpoint_url=MINIO_URL,
+    aws_access_key_id=MINIO_ACCESS_KEY,
+    aws_secret_access_key=MINIO_SECRET_ACCESS_KEY,
+    region_name=MINIO_REGION,
+)
  
 def load_known_faces():
-   
-    known_faces_dir = 'uploaded_images'
+    try:
+        response=minio_client.list_objects_v2(Bucket=MINIO_BUCKET)
+        supported_formats = ['jpeg', 'jpg', 'png']
 
-    for filename in os.listdir(known_faces_dir):
-        if filename.endswith('.png') or filename.endswith('.jpg') or filename.endswith('.jpeg'):
-            file_path = os.path.join(known_faces_dir, filename)
-            
-            
-            image = face_recognition.load_image_file(file_path)
+        if 'Contents' not in response:
+            print('No images found in bucket')
+            return
+
+        for item in response['Contents']:
+            key = item['Key']
+            extension = key.rsplit('.', 1)[1]
+            print(extension)
+            if extension not in supported_formats:
+                continue
+
+            obj = minio_client.get_object(Bucket=MINIO_BUCKET, Key=key)
+            image_bytes = obj['Body'].read()
+
+            image = face_recognition.load_image_file(io.BytesIO(image_bytes))
             face_encodings = face_recognition.face_encodings(image)
-            
-            if face_encodings:  
-                face_encoding = face_encodings[0]  
-                
-                
-                name = os.path.splitext(filename)[0]
-                
-                
-                known_face_encodings.append(face_encoding)
-                known_face_names.append(name)
-            else:
-                print(f"No face found in {file_path}")
+
+            if not face_encodings:
+                print(f"No face found in {key}")
+                continue
+
+            face_encoding = face_encodings[0]
+            name = os.path.splitext(os.path.basename(key))[0]
+            known_face_encodings.append(face_encoding)
+            known_face_names.append(name)
+
+    except Exception as e:
+        print(e)
+
+
 def save_attendance(name):
     with open(os.path.join(ATTENDANCE_DIR, f"{name}.txt"), 'a') as file:
         file.write(f"{name} attended\n")
@@ -62,57 +93,86 @@ class HelloWorld(Resource):
 
 @app.route('/upload', methods=['POST'])
 def image_upload():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file part'}), 400
 
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'error': 'No selected file'}), 400
 
-    image = Image.open(io.BytesIO(file.read()))
-    image = image.convert('RGB')  
-    image_np = np.array(image)
+        image = Image.open(io.BytesIO(file.read()))
+        image = image.convert('RGB')  
+        image_np = np.array(image)
+        
+        face_locations = face_recognition.face_locations(image_np)
+        face_encodings = face_recognition.face_encodings(image_np, face_locations)
+        
+        tolerance = 0.5
+        message = "No faces found in the image"  
+       
+        if not face_encodings:
+            message = "No faces found in the image"
 
-    
-    face_locations = face_recognition.face_locations(image_np)
-    face_encodings = face_recognition.face_encodings(image_np, face_locations)
-    
-    tolerance = 0.5
-    message = "No faces found in the image"  
-   
-    if face_encodings:
         for face_encoding in face_encodings:
             matches = face_recognition.compare_faces(known_face_encodings, face_encoding, tolerance=tolerance)
+
+            if not any(matches):
+                message = "No known face matched, attendance not recorded"
+                continue
+            
             face_distances = face_recognition.face_distance(known_face_encodings, face_encoding)
             name = "Unknown"
-            if True in matches:
-                first_match_index = matches.index(True)
-                name = known_face_names[first_match_index]
-                save_attendance(name)
-                message = f"{name}"
-                break  # Exit loop after first match (optional based on your needs)
-            else:
-                message = "No known face matched, attendance not recorded"
-    else:
-        message = "No faces found in the image"
 
+            first_match_index = matches.index(True)
+            name = known_face_names[first_match_index]
+            save_attendance(name)
+            message = f"{name}"
+            break  # Exit loop after first match (optional based on your needs)
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
     
     return jsonify({'status': message}), 200
 
 @app.route('/upload-image', methods=['POST'])
 def upload_image():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
+    try:
+        if 'file' not in request.files:
+            raise ValueError('No file part')
 
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
+        file = request.files['file']
+        if file.filename == '':
+            raise ValueError('No selected file')
 
-    
-    image_path = os.path.join(IMAGE_DIR, file.filename)
-    file.save(image_path)
+        image = Image.open(file.stream)
+        supported_formats = ['JPEG', 'JPG', 'PNG']
+        
+        if image.format not in supported_formats:
+            new_image = io.BytesIO()
+            image = image.convert('RGB')
+            image.save(new_image, format='JPEG')
+            new_image.seek(0)
+            filename = f"{file.filename.rsplit('.', 1)[0]}.jpg"
+            content_type = 'image/jpeg'
+        else:
+            file.stream.seek(0)
+            new_image = file.stream
+            filename = file.filename
+            content_type = file.content_type
 
-    return jsonify({'message': 'Image uploaded successfully!', 'image_path': image_path}), 200
+        minio_client.upload_fileobj(
+            new_image,
+            MINIO_BUCKET,
+            filename,
+            ExtraArgs={'ContentType': content_type}
+        )   
+        resp = jsonify({'message': 'Image uploaded successfully!'}), 200
+
+    except Exception as e:
+        resp = jsonify({'error': str(e)}), 500
+        
+    return resp
 
 if __name__ == '__main__':
     load_known_faces()  
