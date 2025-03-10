@@ -9,6 +9,8 @@ from flask_cors import CORS
 import boto3
 import time
 from dotenv import load_dotenv
+from pprint import pprint
+from concurrent.futures import ThreadPoolExecutor
 load_dotenv()
 
 app = Flask(__name__)
@@ -38,37 +40,62 @@ minio_client = boto3.client(
     region_name=MINIO_REGION,
 )
  
+def fetch_image(key):
+    supported_formats = ['jpeg', 'jpg', 'png']
+    try:
+        extension = key.rsplit('.', 1)[1]
+        if extension not in supported_formats:
+            return
+
+        start_time = time.time()
+        print(f"Getting: {key}")
+        obj = minio_client.get_object(Bucket=MINIO_BUCKET, Key=key)
+        print(f"Got={key} Took={time.time()-start_time}s")
+        image_bytes = obj["Body"].read()
+        return key, image_bytes
+    except Exception as e:
+        print(f"Failed to fetch {key} : {e}")
+        return key, None
+
+def process_image(key, image_bytes):
+    start_time = time.time()
+    image = face_recognition.load_image_file(io.BytesIO(image_bytes))
+    face_encodings = face_recognition.face_encodings(image)
+
+    if not face_encodings:
+        print(f"No face found in {key}")
+        return
+
+    face_encoding = face_encodings[0]
+    name = os.path.splitext(os.path.basename(key))[0]
+    print(f"Processed={key} took={time.time() - start_time}s")
+    return face_encoding, name
+
 def load_known_faces():
     try:
         response=minio_client.list_objects_v2(Bucket=MINIO_BUCKET)
-        supported_formats = ['jpeg', 'jpg', 'png']
+        pprint(response)
+        start_time = time.time()
 
         if 'Contents' not in response:
             print('No images found in bucket')
             return
 
-        for item in response['Contents']:
-            key = item['Key']
-            extension = key.rsplit('.', 1)[1]
-            print(extension)
-            if extension not in supported_formats:
+        keys= [item["Key"] for item in response.get('Contents', [])][:5]
+
+        with ThreadPoolExecutor(max_workers=20) as executor:
+            fetch_results = list(executor.map(fetch_image, keys))
+
+        for key, image_bytes in fetch_results:
+            if image_bytes is None:
                 continue
 
-            obj = minio_client.get_object(Bucket=MINIO_BUCKET, Key=key)
-            image_bytes = obj['Body'].read()
-
-            image = face_recognition.load_image_file(io.BytesIO(image_bytes))
-            face_encodings = face_recognition.face_encodings(image)
-
-            if not face_encodings:
-                print(f"No face found in {key}")
-                continue
-
-            face_encoding = face_encodings[0]
-            name = os.path.splitext(os.path.basename(key))[0]
-            known_face_encodings.append(face_encoding)
-            known_face_names.append(name)
-
+            result = process_image(key, image_bytes)
+            if result:
+                encoding, name = result
+                known_face_encodings.append(encoding)
+                known_face_names.append(name)
+        print(f"Total time: {time.time() - start_time}")
     except Exception as e:
         print(e)
 
