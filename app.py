@@ -81,7 +81,7 @@ def load_known_faces():
             print('No images found in bucket')
             return
 
-        keys= [item["Key"] for item in response.get('Contents', [])][:5]
+        keys= [item["Key"] for item in response.get('Contents', [])]
 
         with ThreadPoolExecutor(max_workers=20) as executor:
             fetch_results = list(executor.map(fetch_image, keys))
