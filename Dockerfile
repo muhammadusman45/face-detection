@@ -19,6 +19,6 @@ ENV FLASK_APP=app:app
 COPY uploaded_images /uploaded_images
 RUN chmod -R 755 /uploaded_images
 
-CMD ["flask", "run", "--host=0.0.0.0"]
+CMD ["python", "app.py"]
 EXPOSE 5000
 

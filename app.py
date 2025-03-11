@@ -74,7 +74,6 @@ def process_image(key, image_bytes):
 def load_known_faces():
     try:
         response=minio_client.list_objects_v2(Bucket=MINIO_BUCKET)
-        pprint(response)
         start_time = time.time()
 
         if 'Contents' not in response:
@@ -203,4 +202,4 @@ def upload_image():
 
 if __name__ == '__main__':
     load_known_faces()  
-    app.run(debug=True)
+    app.run(host='0.0.0.0', debug=False)
